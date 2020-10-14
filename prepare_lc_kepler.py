@@ -5,9 +5,11 @@ import astropy.units.cds as ucds
 import os, fnmatch
 import numpy as np
 import matplotlib.pyplot as plt
+#from scipy.signal import savgol_filter # for smoothing the spectrum
+from scipy.ndimage import gaussian_filter
 
 def version():
-	return '0.1alpha'
+	return '0.2'
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -170,6 +172,11 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 	print(' Doing plots                          : ', doplots)
 	print(' Number of files to process           : ', Nfiles)
 	print(' -------------------------------')
+	#
+	infos='File prepared using prepare_lc_kepler.py ' + version() + ' function concatenate_kepler(), see https://github.com/OthmanB/'
+	config={'pol_order':pol_order, 'data_dir':dir_in, 'remove_trend':remove_trend, 'var_calibration':var_calibration, 'ignore_biggaps':ignore_bigGaps, 'useraw':useraw}
+	short_config=str(int(useraw == True)) + str(int(remove_trend == True)) + str(int(var_calibration == True)) + str(int(ignore_bigGaps == True))
+	#	
 	print(' [1] Scanning files and setting up')
 	plt.xlabel('time (days)', fontsize=10)
 	plt.ylabel('Intensity', fontsize=10)
@@ -192,8 +199,7 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 		lightcurve=np.zeros((2,len(r1)), dtype=np.float)
 		#file_out=dir_out + kic_number + '.npz'
 		file_out=file_core +  '_LC.npz'
-		infos='File prepared using prepare_lc_kepler.py ' + version()
-		np.savez_compressed(file_out, lightcurve=lightcurve, kic_number=kic_number, infos=infos)
+		np.savez_compressed(file_out, lightcurve=lightcurve, id_number=kic_number, config=config, short_config=short_config, infos=infos)
 	else:
 		files=files_in_list
 		t=t0
@@ -239,7 +245,7 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 			kic, r1, r2=readfits_MAST_kepler(filegroup, getraw=useraw, substract_t0=False)
 			r1,r2=keep_finite(r1,r2)
 			if remove_trend == True:
-				r1,r2, fit_A_model=rem_trend(r1, r2, pol_order, ppm=True, , debug=False)
+				r1,r2, fit_A_model=rem_trend(r1, r2, pol_order, ppm=True, debug=False)
 		if Nfilegroup >1:
 			for i in range(Nfilegroup-1):
 				print('------------------------')
@@ -335,26 +341,18 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 		lightcurve[0,:]=rfinal1
 		lightcurve[1,:]=rfinal2
 		file_out=dir_out + file_core +  '_LC.npz'
-		infos='File prepared using prepare_lc_kepler.py ' + version()
-		np.savez_compressed(file_out, lightcurve=lightcurve, kic_number=kic_number, infos=infos)
-		
-		print(' Finished')
-		print(' Root names of created files: ', file_core, '*.*')
+		np.savez_compressed(file_out, lightcurve=lightcurve, id_number=kic_number, config=config, short_config=short_config, infos=infos)
+
+		print(' Root names of created lightcurve files: ', file_core, '*.*')
 	return lightcurve
 
-def do_tf_ls(dir_file, filename, Nyquist_type='mean', doplots=True):
-	''' 
-		Performs the LombScargle periodogram and normalise it in ppm^2/microHz
-		Note that lightcurves are assumed to be:
-			- saved into an npz format
-			- being in a 2D array
-			- with the first index having the time in days
-			- and the second index having the flux in ppm
+def compute_ls(time, flux, Nyquist_type='mean'):
 	'''
-	d=np.load(dir_file+filename)
-	time=d['lightcurve'][0,:]
-	flux=d['lightcurve'][1,:]
-	#
+		Core function performing the Lomb-Scargle
+		Using time and flux, it compute the power over the proper frequency range
+		and at the proper resolution (no oversampling). Then it normalizes it using the Shanon theorem
+		so that units are in ppm^2/microHz. 
+	'''
 	passed=False
 	dt=time[1]-time[0]
 	if Nyquist_type == 'best':
@@ -362,10 +360,12 @@ def do_tf_ls(dir_file, filename, Nyquist_type='mean', doplots=True):
 			if dt > time[i]-time[i-1]: # sampling period
 				dt=time[i] - time[i-1] # We try to find the highest resolution yet maximising independence of data
 		passed=True
+
 	if Nyquist_type == 'linfit':
 		fit=np.polyfit(np.linspace(0, len(time)-1, len(time)), time-np.min(time), 1)  # We compute the mean time spacing through linear fiting. Useful for serie with a lot of gaps
 		dt=fit[0]
 		passed=True
+
 	if (passed == False) or (Nyquist_type == 'mean'): # Mean is the default even if the wrong value of Nyquist_type was given
 		dt=(max(time) - min(time))/len(time) # The Nyquist is evaluated using the mean delta time. This is the most common standard (from Press & Rybicki)
 		passed=True
@@ -378,17 +378,84 @@ def do_tf_ls(dir_file, filename, Nyquist_type='mean', doplots=True):
 	power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz) #.autopower(nyquist_factor=1, method='cython')
 	Nflux=len(flux)
 	#
-	tot_MS=np.sum( (flux - np.mean(flux))**2) / np.float(Nflux)
-	tot_lomb=np.sum(power[0:Nflux -1])
+	tot_MS=np.sum( (flux - np.mean(flux))**2) / np.float(Nflux) # Total power in the timeserie
+	tot_lomb=np.sum(power[0:Nflux -1]) # Total power in the lomb-scargle
 	#
 	bw=freq[2]-freq[1]
-	power2=power*(tot_MS/tot_lomb)/bw
-	#
-	plt.xlabel='Frequency (\mu' + 'Hz)'
-	plt.ylabel='Power (ppm^2/ \mu'+'Hz)'
-	plt.plot(freq, power)
-	plt.savefig(dir_file + file_core +  '_LC_fit.png', dpi=300) # Save the previous figure
-			
+	power=power*(tot_MS/tot_lomb)/bw # Normalised spectrum in ppm^2/microHz
+
+	return freq, power,resol
+
+def simple_filter(time, flux, sigma=4):
+	''' 
+		Filters the lightcurve by removing signals that are above some sigma threshold
+	'''
+	mean=np.mean(flux)
+	stddev=sigma*np.std(flux)
+	pos_ok=np.where(np.abs(flux) <= mean + sigma*stddev)
+	print('--- Using simple filter ---- ')
+	print(' min/max flux:', np.min(flux), ' / ', np.max(flux))
+	print(' mean/var flux:', np.mean(flux), ' / ', np.std(flux))
+	print(' Total number of data points: ', len(flux))
+	print(' Number of rejected points  : ', len(flux) - len(pos_ok[0]))
+	print(' Fraction of rejected points: ', (len(flux) - len(pos_ok[0]))/len(flux) * 100), ' %'
+	print(' ---------------------------')
+	t=time[pos_ok]
+	f=flux[pos_ok]
+	return t,f
+
+def do_tf_ls(dir_file, filename, doplots=True, planets=False):
+	''' 
+		Performs the LombScargle periodogram and normalise it in ppm^2/microHz
+		Note that lightcurves are assumed to be:
+			- saved into an npz format
+			- being in a 2D array
+			- with the first index having the time in days
+			- and the second index having the flux in ppm
+	'''
+	d=np.load(dir_file+filename)
+	id_number=str(d['id_number'])
+	numeral_config=str(d['short_config']) # used to properly define the output filename
+
+	time=d['lightcurve'][0,:]
+	flux=d['lightcurve'][1,:]
+	
+	Nyquist_type='mean'
+	# ---- Filetering and computing the LS ----
+	if planets == True:
+		print('The proper function to filter planetary / Binary signal to reveal pulsations')
+		print('Is not written yet. Please use planets == False for the moment')
+	else:
+		time, flux=simple_filter(time, flux, sigma=3.5)
+		freq, power,resol=compute_ls(time, flux, Nyquist_type=Nyquist_type) 
+
+	file_out=dir_file + id_number + '_' + numeral_config + '_TF'
+	
+	# ---- Making proper plots ----
+	sfactor1_mu=1.
+	sfactor2_mu=0.1
+	sfactor1=np.int(sfactor1_mu/resol) # Smooth over 1 microHz
+	sfactor2=np.int(sfactor2_mu/resol) # Smooth over 10 microHz
+	y_smooth1=gaussian_filter(power, sfactor1, mode='mirror')
+	y_smooth2=gaussian_filter(power, sfactor2, mode='mirror')
+	
+	plt.figure()
+	plt.xlabel('Frequency ($\mu$' + 'Hz)', fontsize=10)
+	plt.ylabel('Power ($ppm^2/ \mu$'+'Hz)', fontsize=10)
+	plt.xscale('log')
+	plt.yscale('log')
+	plt.plot(freq, power, color='black', label='spectrum')
+	plt.plot(freq, y_smooth1, color='blue', label='sfactor1='+ str(sfactor1_mu) + '($\mu$Hz)')
+	plt.plot(freq, y_smooth2, color='red', label='sfactor2='+ str(sfactor2_mu) + '($\mu$Hz)')
+	plt.legend(loc='lower left')
+	plt.savefig(file_out + '.png', dpi=300) # Save the previous figure
+	
+	# ---- Saving into npz format data and metadata ----
+	infos='File prepared using prepare_lc_kepler.py ' + version() + '  function do_tf_ls(), see https://github.com/OthmanB/'
+	config={'Nyquist_type':Nyquist_type, 'dir_file':dir_file, 'filename':filename}
+	np.savez_compressed(file_out +'.npz', freq=freq, power=power, id_number=id_number, config=config, infos=infos)
+	print(' Root names of created spectrum files: ', dir_file + id_number, '*.*')
+
 	return freq, power
 
 def do_LC(dir_in, dir_out, ID='*'):
@@ -407,6 +474,20 @@ def do_LC(dir_in, dir_out, ID='*'):
 	print('           [ID Number]_[useraw][remove_trend][var_calibration][ignore_bigGaps]_*')
 	return lc_0100, lc_0000
 
+def do_tf(dir_in, ID='*'):
+	'''
+		The Main function that generate a Power Spectrum using Lomb-Scargle
+		dir_in: directory in which the lightcurve is provided following the
+				standard that I use (see do_LC()). If a file is not found,
+			    an error will be returned. If multiple files are found, one tf
+			    is made for each of them.
+	'''
+	files_in_list=get_files_list(dir_in, extension='_LC.npz', prefix='', ID='*')
+	print(files_in_list)
+	for file in files_in_list:
+		do_tf_ls(dir_in, file, doplots=True, planets=False)
+
+
 def do_test_LC():
 	current_dir=os.getcwd()
 	dir_in=current_dir + '/test/'
@@ -416,14 +497,17 @@ def do_test_LC():
 def do_test_tf_ls():
 	current_dir=os.getcwd()
 	dir_in=current_dir + '/test/out/'
-	files_in_list=get_files_list(dir_in, extension='.npz', prefix='', ID='*')
-	
+	files_in_list=get_files_list(dir_in, extension='_LC.npz', prefix='', ID='*')
+	do_tf_ls(dir_file, filename, doplots=True, planets=False)
+
 	print('dir_in =', dir_in)
 	print('files_in_list: ')
 	print(files_in_list)
-	do_tf_ls(dir_in, files_in_list[1])
+	do_tf_ls(dir_in, files_in_list[0])
 
 # ----- Testing programs ----
 #do_test_LC() # testing the generation of a lightcurve with a provided example
-do_test_tf_ls()
-
+#do_test_tf_ls()
+#current_dir=os.getcwd()
+#dir_in=current_dir + '/test/out/'
+#do_tf(dir_in, ID='*')
