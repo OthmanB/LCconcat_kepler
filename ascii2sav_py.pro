@@ -41,7 +41,7 @@ freq=dblarr(1, n_elements(param[*,0]))
 spec_reg=dblarr(1, n_elements(param[*,0]))
 freq[0,*]=param[*,0]
 spec_reg[0,*]=param[*,1]
-save, freq, spec_reg, filename=file_out
+save, freq, spec_reg, id_number, filename=file_out
 
 ; Once the file was read properly and saved into a save file, the original file is erased
 ;file_delete, file_in

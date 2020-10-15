@@ -1,5 +1,7 @@
 import subprocess
 import os, fnmatch
+import numpy as np
+from prepare_lc_kepler import get_files_list
 
 def version():
 	return 'v0.1'
@@ -19,19 +21,28 @@ def npzTF2idlsav(dir_npz, npzfile, dir_sav=''):
 		dir_sav=dir_npz
 
 	current_dir=os.getcwd()
+	try:
+		idldir=os.environ['IDL_DIR']
+	except:
+		print('Error: IDL_DIR environment variable does not exist')
+		print('       Please set it in the shell script before using this program')
+		print('The program will exit now')
+		exit()
 	ascii_file=npzTF2ascii(dir_npz, npzfile, dir_ascii=dir_sav)
 	subprocess.call(["mv", ascii_file, "tmp_in.ascii"])
-	subprocess.call(["idl", "npz2sav_script.pro"])  # WARNING
+	subprocess.call([idldir + "/bin/idl", "npz2sav_script.pro"])  # calling idl
 	file_list=get_files_list(current_dir, extension='_out.sav', prefix='')
 	print('file_list=', file_list)
 	if file_list[0] == '':
 		print('Error: Could not find the temporary output sav file')
-		#exit()
+		print('The program will exit now')
+		exit()
 	else:
 		# If everything went well, we can move the temporary sav file into 
 		# the directory dedicated for this sav file
 		savfile=npzfile.split('.')[0] + '.sav'
 		subprocess.call(["mv", file_list[0], dir_sav+savfile])
+	subprocess.call(["rm", "tmp_in.ascii"])
 
 def npzTF2ascii(dir_npz, npzfile, dir_ascii=''):
 	
@@ -47,7 +58,7 @@ def npzTF2ascii(dir_npz, npzfile, dir_ascii=''):
 	infos=str(d['infos'])
 	#freq=freq, power=power, id_number=id_number, config=config, infos=infos
 	ascii_file=dir_ascii + core_file + '.ascii'
-	print(ascii_file)
+	#print(ascii_file)
 	try:
 		f=open(ascii_file, 'w+')
 		f.write('#' + str(infos) + '\n')
