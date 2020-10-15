@@ -6,10 +6,71 @@ import os, fnmatch
 import numpy as np
 import matplotlib.pyplot as plt
 #from scipy.signal import savgol_filter # for smoothing the spectrum
+import subprocess
+
 from scipy.ndimage import gaussian_filter
 
 def version():
 	return '0.2'
+
+def npzTF2idlsav(dir_npz, npzfile, dir_sav=''):
+	'''
+		A small program that calls idl in order to save the npz file with the spectrum  
+		into a sav file.
+		Because the idlpy bridge is not always available (no pip install)
+		here we pass by ascii temporary file
+		Typically, the conversion is as follow:
+			1. Read the npz file
+			2. Write the npz content temporary files: Support only the spectrum content
+			3. Call an IDL subroutine inside python that will save the file in sav format 
+	'''
+	if dir_sav == '':
+		dir_sav=dir_npz
+
+	current_dir=os.getcwd()
+	ascii_file=npzTF2ascii(dir_npz, npzfile, dir_ascii=dir_sav)
+	subprocess.call(["mv", ascii_file, "tmp_in.ascii"])
+	subprocess.call(["idl", "npz2sav_script.pro"])  # WARNING
+	file_list=get_files_list(current_dir, extension='_out.sav', prefix='')
+	print('file_list=', file_list)
+	if file_list[0] == '':
+		print('Error: Could not find the temporary output sav file')
+		#exit()
+	else:
+		# If everything went well, we can move the temporary sav file into 
+		# the directory dedicated for this sav file
+		savfile=npzfile.split('.')[0] + '.sav'
+		subprocess.call(["mv", file_list[0], dir_sav+savfile])
+
+def npzTF2ascii(dir_npz, npzfile, dir_ascii=''):
+	
+	if dir_ascii == '':
+		dir_ascii=dir_npz
+
+	core_file=npzfile.split('.')[0] # remove the extension
+
+	d=np.load(dir_npz+npzfile)
+	freq=d['freq']
+	power=d['power']
+	id_number=str(d['id_number'])
+	infos=str(d['infos'])
+	#freq=freq, power=power, id_number=id_number, config=config, infos=infos
+	ascii_file=dir_ascii + core_file + '.ascii'
+	print(ascii_file)
+	try:
+		f=open(ascii_file, 'w+')
+		f.write('#' + str(infos) + '\n')
+		f.write('id: ' + str(id_number) + '\n')
+		for i in range(len(freq)):
+			string='{:f}   {:f}'.format(freq[i], power[i])
+			f.write(string + '\n')
+		f.close()
+		print('Content of ', npzfile, ' written into', ascii_file)
+	except:
+		print('Error: prepare_lc_kepler.py::npzTF2ascii(): Failed to write npz spectrum content into ascii file')
+		print('The program will exit now')
+		#exit()
+	return ascii_file
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -474,18 +535,19 @@ def do_LC(dir_in, dir_out, ID='*'):
 	print('           [ID Number]_[useraw][remove_trend][var_calibration][ignore_bigGaps]_*')
 	return lc_0100, lc_0000
 
-def do_tf(dir_in, ID='*'):
+def do_TF(dir_lc, ID='*'):
 	'''
 		The Main function that generate a Power Spectrum using Lomb-Scargle
-		dir_in: directory in which the lightcurve is provided following the
+		dir_lc: directory in which the lightcurve is provided following the
 				standard that I use (see do_LC()). If a file is not found,
 			    an error will be returned. If multiple files are found, one tf
 			    is made for each of them.
+		ID: Optional filter using an Identifier in case different stars are in the same directory
 	'''
-	files_in_list=get_files_list(dir_in, extension='_LC.npz', prefix='', ID='*')
+	files_in_list=get_files_list(dir_lc, extension='_LC.npz', prefix='', ID='*')
 	print(files_in_list)
 	for file in files_in_list:
-		do_tf_ls(dir_in, file, doplots=True, planets=False)
+		do_tf_ls(dir_lc, file, doplots=True, planets=False)
 
 
 def do_test_LC():
@@ -505,9 +567,12 @@ def do_test_tf_ls():
 	print(files_in_list)
 	do_tf_ls(dir_in, files_in_list[0])
 
+def do_test_TF():
+	current_dir=os.getcwd()
+	dir_lc=current_dir + '/test/out/'
+	do_TF(dir_lc, ID='*')
+
 # ----- Testing programs ----
 #do_test_LC() # testing the generation of a lightcurve with a provided example
 #do_test_tf_ls()
-#current_dir=os.getcwd()
-#dir_in=current_dir + '/test/out/'
-#do_tf(dir_in, ID='*')
+#do_test_TF()
