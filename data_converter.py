@@ -1,3 +1,10 @@
+'''
+---------------
+This file regroups a collection of functions that can be used to perform conversion into various format of the 
+spectrum
+---------------
+'''
+
 import subprocess
 import os, fnmatch
 import numpy as np
@@ -32,7 +39,7 @@ def npzTF2idlsav(dir_npz, npzfile, dir_sav=''):
 	subprocess.call(["mv", ascii_file, "tmp_in.ascii"])
 	subprocess.call([idldir + "/bin/idl", "npz2sav_script.pro"])  # calling idl
 	file_list=get_files_list(current_dir, extension='_out.sav', prefix='')
-	print('file_list=', file_list)
+	#print('file_list=', file_list)
 	if file_list[0] == '':
 		print('Error: Could not find the temporary output sav file')
 		print('The program will exit now')
@@ -73,3 +80,5 @@ def npzTF2ascii(dir_npz, npzfile, dir_ascii=''):
 		print('The program will exit now')
 		#exit()
 	return ascii_file
+
+print('data_converter.py, version ', version(), ' loaded')

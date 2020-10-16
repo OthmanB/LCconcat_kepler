@@ -1,3 +1,11 @@
+'''
+---------------
+This file regroups all the basic necessary function to compute a clean lightcurve and power spectrum
+from the individual quarters of Kepler observations. 
+Use do_LC() and do_TF() in order to do so. Other functions are just dependencies of those.
+---------------
+'''
+
 from astropy.io import fits
 from astropy.timeseries import LombScargle
 import astropy.units.si as usi
@@ -10,7 +18,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
 
 def version():
-	return 'v0.2'
+	return 'v0.25'
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -19,7 +27,7 @@ def format_ID(ID, Ndigits=9):
 		With Kepler data, Ndigits=9 is fine. For TESS, Ndigits=10 shoud be OK (need check)
 	'''
 	NID=len(ID)
-	delta=8-NID # We want to format using 8 digits
+	delta=8-NID+1 # We want to format using 8 digits
 	New_ID=ID
 	for d in range(delta):
 		New_ID='0' + New_ID
@@ -117,8 +125,11 @@ def get_files_list(dir_in, extension='.fits', prefix='kplr', ID='*'):
 	ID: The ID number of a specific star. Should not be set if the data structure is 1-star, 1 directory. Instead use the default
 	'''
 	listOfFiles = os.listdir(dir_in)
-	if ID != '*': # Ensure that the search incorporate the date sufix that is always in the filenames 
-		ID=ID+'-*'
+	if ID != '*': 
+		if extension == '.fits' and prefix == 'kplr': # Ensure that the search incorporate the date sufix that is always in the quarter filenames 
+			ID=ID+'-*'
+		else:
+			ID=ID +'*' # Case where the function is used in another context than Kepler quarters
 	pattern = prefix + ID + extension
 	matching=[]
 	for entry in listOfFiles:
@@ -471,6 +482,7 @@ def do_LC(dir_in, dir_out, ID='*'):
 	files_in_list=get_files_list(dir_in, extension='.fits', prefix='kplr', ID=ID)
 	lc_0100=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_order=6, var_calibration=False, ignore_bigGaps=False, useraw=False, doplots=True)
 	lc_0000=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=False, pol_order=2, var_calibration=False, ignore_bigGaps=False, useraw=False, doplots=True)
+	print('    Two lightcurve created with short configuration 0000 and 0100')
 	print(' Note on filenames: The files syntax follows a strict format defined as:')
 	print('           [ID Number]_[useraw][remove_trend][var_calibration][ignore_bigGaps]_*')
 	return lc_0100, lc_0000
@@ -484,7 +496,7 @@ def do_TF(dir_lc, ID='*'):
 			    is made for each of them.
 		ID: Optional filter using an Identifier in case different stars are in the same directory
 	'''
-	files_in_list=get_files_list(dir_lc, extension='_LC.npz', prefix='', ID='*')
+	files_in_list=get_files_list(dir_lc, extension='_LC.npz', prefix='', ID=ID)
 	print(files_in_list)
 	for file in files_in_list:
 		do_tf_ls(dir_lc, file, doplots=True, planets=False)
@@ -511,6 +523,8 @@ def do_test_TF():
 	current_dir=os.getcwd()
 	dir_lc=current_dir + '/test/out/'
 	do_TF(dir_lc, ID='*')
+
+print('prepare_lc_kepler.py, version ', version(), ' loaded')
 
 # ----- Testing programs ----
 #do_test_LC() # testing the generation of a lightcurve with a provided example
