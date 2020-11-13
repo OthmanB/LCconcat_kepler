@@ -18,7 +18,9 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
 
 def version():
-	return 'v0.25'
+	dif_add='Additions since last version:\n '
+	dif_add=dif_add + '    Adding rem_trend_smooth() that can performs trend removal by smoothing.\n    Note that this is not linked to any lightucrve/spectrum processor.\n    Implementation requires some coding.'
+	return 'v0.26' , dif_add
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -87,6 +89,36 @@ def rem_trend(time, flux, pol_order, ppm=True, debug=False):
 		print('fit_A= ', fit_A)
 		print('---')
 	return time, flux_out, fit_A_model
+
+def rem_trend_smooth(time, flux, scoef, ppm=True, debug=False):
+	'''
+		Perform a gaussian smoothing of the  flux over time and use
+		it to remove trends on the lightcurve
+		Option allows you to decide whether you convert the result in ppm or not
+		scoef: in the same unit as the time vector
+	'''
+	resol=time[2] - time[1]
+	sfactor_bin=int(sfactor/resol)
+	lc_smooth=prep.gaussian_filter(flux, sfactor_bin)
+	if ppm == True:
+		flux_out=1e6*((flux/lc_smooth) -1.) # normalisation in 
+	else:
+		flux_out=flux-lc_smooth + np.mean(flux)
+	if debug == True:
+		print('---')
+		print('min(flux)=', np.min(flux))
+		print('max(flux)=', np.max(flux))
+		print('mean(flux)=', np.mean(flux))
+		print('var(flux)=', np.var(flux))
+		#
+		print('min(flux_out)=', np.min(flux_out))
+		print('max(flux_out)=', np.max(flux_out))
+		print('mean(flux_out)=', np.mean(flux_out))
+		print('var(flux_out)=', np.var(flux_out))
+		print('fit_A= ', fit_A)
+		print('---')
+	return time, flux_out, lc_smooth
+
 
 def eval_con_quarters(timeA, fluxA, timeB, fluxB, Dt_connect=5):
 	pol_order=1
@@ -185,7 +217,8 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 	print(' Number of files to process           : ', Nfiles)
 	print(' -------------------------------')
 	#
-	infos='File prepared using prepare_lc_kepler.py ' + version() + ' function concatenate_kepler(), see https://github.com/OthmanB/'
+	v,dif=version
+	infos='File prepared using prepare_lc_kepler.py ' + v + ' function concatenate_kepler(), see https://github.com/OthmanB/'
 	config={'pol_order':pol_order, 'data_dir':dir_in, 'remove_trend':remove_trend, 'var_calibration':var_calibration, 'ignore_biggaps':ignore_bigGaps, 'useraw':useraw}
 	short_config=str(int(useraw == True)) + str(int(remove_trend == True)) + str(int(var_calibration == True)) + str(int(ignore_bigGaps == True))
 	#	
@@ -427,7 +460,13 @@ def do_tf_ls(dir_file, filename, doplots=True, planets=False):
 	'''
 	d=np.load(dir_file+filename)
 	id_number=str(d['id_number'])
-	numeral_config=str(d['short_config']) # used to properly define the output filename
+	try:
+		numeral_config=str(d['short_config']) # used to properly define the output filename
+	except:
+		print(' Warning: short_confing not find in the load file')
+		print('          The output file name will be specified as having an unknown configuration with the tag unknown_cfg')
+		print('          Pursuing...')
+		numeral_config='unknown_cfg'
 
 	time=d['lightcurve'][0,:]
 	flux=d['lightcurve'][1,:]
@@ -463,7 +502,8 @@ def do_tf_ls(dir_file, filename, doplots=True, planets=False):
 	plt.savefig(file_out + '.png', dpi=300) # Save the previous figure
 	
 	# ---- Saving into npz format data and metadata ----
-	infos='File prepared using prepare_lc_kepler.py ' + version() + '  function do_tf_ls(), see https://github.com/OthmanB/'
+	v, dif=version()
+	infos='File prepared using prepare_lc_kepler.py ' + v + '  function do_tf_ls(), see https://github.com/OthmanB/'
 	config={'Nyquist_type':Nyquist_type, 'dir_file':dir_file, 'filename':filename}
 	np.savez_compressed(file_out +'.npz', freq=freq, power=power, id_number=id_number, config=config, infos=infos)
 	print(' Root names of created spectrum files: ', dir_file + id_number, '*.*')
@@ -524,7 +564,9 @@ def do_test_TF():
 	dir_lc=current_dir + '/test/out/'
 	do_TF(dir_lc, ID='*')
 
-print('prepare_lc_kepler.py, version ', version(), ' loaded')
+v, dif_add=version()
+print('prepare_lc_kepler.py, version ', v, ' loaded')
+print(dif_add)
 
 # ----- Testing programs ----
 #do_test_LC() # testing the generation of a lightcurve with a provided example
