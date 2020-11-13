@@ -387,7 +387,7 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 		lightcurve[1,:]=rfinal2
 		file_out=dir_out + file_core +  '_LC.npz'
 		np.savez_compressed(file_out, lightcurve=lightcurve, id_number=kic_number, config=config, short_config=short_config, infos=infos)
-
+		plt.close() # Closing the plot to avoid excessive memory usage
 		print(' Root names of created lightcurve files: ', file_core, '*.*')
 	return lightcurve
 
