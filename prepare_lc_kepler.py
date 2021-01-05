@@ -217,7 +217,7 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 	print(' Number of files to process           : ', Nfiles)
 	print(' -------------------------------')
 	#
-	v,dif=version
+	v,dif=version()
 	infos='File prepared using prepare_lc_kepler.py ' + v + ' function concatenate_kepler(), see https://github.com/OthmanB/'
 	config={'pol_order':pol_order, 'data_dir':dir_in, 'remove_trend':remove_trend, 'var_calibration':var_calibration, 'ignore_biggaps':ignore_bigGaps, 'useraw':useraw}
 	short_config=str(int(useraw == True)) + str(int(remove_trend == True)) + str(int(var_calibration == True)) + str(int(ignore_bigGaps == True))

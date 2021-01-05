@@ -61,13 +61,13 @@ def make_ALL(dir_base, cadence, dir_base_out, kic_list='', kic_file='', kic_file
 		kic_file: List of kic number specified into a text file. Cannot be used jointly with kic_list
 		kic_file_col: Column to be considered to extract the kic list when reading the kic_file text file
 	'''
-	valid_kic=make_LC(dir_base, cadence, dir_base_out, kic_list=kic_list, kic_file=kic_file, kic_file_col=kic_file_col)
+	valid_kic=make_LC(dir_base, cadence, dir_base_out + '/' + cadence + '/', kic_list=kic_list, kic_file=kic_file, kic_file_col=kic_file_col)
 
 	print('[4] Computing the Power Spectrum...')
 	l=len(valid_kic)
 	for i in range(l):
 		print(' [' + str(i+1) + '/' + str(l) + '] Processing KIC ', valid_kic[i], '...') 
-		do_TF(dir_base_out, ID=valid_kic[i]) # Filter by KIC as here there might be several KIC in a single directory
+		do_TF(dir_base_out + '/' + cadence + '/', ID=valid_kic[i]) # Filter by KIC as here there might be several KIC in a single directory
 	return valid_kic
 
 print('tf_from_kiclist.py, version ', version(), ' loaded')
