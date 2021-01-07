@@ -417,8 +417,11 @@ def compute_ls(time, flux, Nyquist_type='mean'):
 	#
 	Nyquist=1e6 / dt / 86400. /2 # Nyquist.
 	resol=1e6/(max(time) - min(time))/86400.
+	print('resol: ', resol)
+	print('Nyquist :', Nyquist)
+	print('np.ceil(Nyquist/resol) : ', np.ceil(Nyquist/resol))
 	#
-	freq=np.linspace(0, Nyquist, np.ceil(Nyquist/resol))
+	freq=np.linspace(0, Nyquist, np.int(np.ceil(Nyquist/resol)))
 	freq[0]=resol/100. # avoid 0 calculation at 0 by approximating it with resol/100.
 	power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz) #.autopower(nyquist_factor=1, method='cython')
 	Nflux=len(flux)
