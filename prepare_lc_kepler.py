@@ -18,9 +18,10 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
 
 def version():
-	dif_add='Additions since last version:\n '
-	dif_add=dif_add + '    Adding rem_trend_smooth() that can performs trend removal by smoothing.\n    Note that this is not linked to any lightucrve/spectrum processor.\n    Implementation requires some coding.'
-	return 'v0.26' , dif_add
+	dif_add='Additions since version 0.25:\n '
+	dif_add=dif_add + '    - v0.26: Adding rem_trend_smooth() that can performs trend removal by smoothing.\n    Note that this is not linked to any lightucrve/spectrum processor.\n    Implementation requires some coding.\n'
+	dif_add=dif_add + '    - v0.27: Adding BJDREFI and BJDREFF to time vector in readfits_MAST_kepler.\n    This allows to have the correct BJD time is substract_t0=False\n'
+	return 'v0.27' , dif_add
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -47,19 +48,26 @@ def readfits_MAST_kepler(file_in, getraw=False, substract_t0=True):
 	ID=d[0].header['OBJECT']
 	ID=ID.split()[1] # Remove the 'KIC' and keep only the Number
 	ID=format_ID(ID)
+	bjdrefi=d[1].header['BJDREFI']
+	bjdreff=d[1].header['BJDREFF']
+	#cadence=d[1].header['CADENCENO']
+	#print('Cadence: ', cadence)
+	bjdref=bjdrefi+bjdreff
 	t=d[1].data['TIME']   # This is nearly identical to the KASOC TIME. But there is a slight difference of the order of the time error (don't understand why)
+	t=t+ bjdref -240e4  # Adding bjdref brings us back to exactly the same time as KASOC TIME
 	#tcorr=d[1].data['TIMECORR']  # TIME CORRECTION
 	lc_sap=d[1].data['SAP_FLUX'] # This is the RAW FLUX IN KASOC LIGHTCURVES
 	lc_pdcsap=d[1].data['PDCSAP_FLUX'] # This is the CORRECTED FLUX IN KASOC LIGHTCURVES
+
 	if getraw == False:
 		lc=np.asarray(lc_pdcsap, dtype=np.float)
 	else:
 		lc=np.asarray(lc_sap, dtype=np.float)
 	if substract_t0 == False:
 		time=np.asarray(t, dtype=np.float)
-	else:
+	else:	
 		time=np.asarray(t-min(t), dtype=np.float)
-	return ID, time, lc
+	return ID, time, lc#, cadence
 	
 def rem_trend(time, flux, pol_order, ppm=True, debug=False):
 	'''
@@ -525,6 +533,7 @@ def do_LC(dir_in, dir_out, ID='*'):
 	files_in_list=get_files_list(dir_in, extension='.fits', prefix='kplr', ID=ID)
 	lc_0100=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_order=6, var_calibration=False, ignore_bigGaps=False, useraw=False, doplots=True)
 	lc_0000=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=False, pol_order=2, var_calibration=False, ignore_bigGaps=False, useraw=False, doplots=True)
+	#lc_0010=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=False, pol_order=2, var_calibration=False, ignore_bigGaps=False, useraw=True, doplots=True)
 	print('    Two lightcurve created with short configuration 0000 and 0100')
 	print(' Note on filenames: The files syntax follows a strict format defined as:')
 	print('           [ID Number]_[useraw][remove_trend][var_calibration][ignore_bigGaps]_*')
