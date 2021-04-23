@@ -21,7 +21,8 @@ def version():
 	dif_add='Additions since version 0.25:\n '
 	dif_add=dif_add + '    - v0.26: Adding rem_trend_smooth() that can performs trend removal by smoothing.\n    Note that this is not linked to any lightucrve/spectrum processor.\n    Implementation requires some coding.\n'
 	dif_add=dif_add + '    - v0.27: Adding BJDREFI and BJDREFF to time vector in readfits_MAST_kepler.\n    This allows to have the correct BJD time is substract_t0=False\n'
-	return 'v0.27' , dif_add
+	dif_add=dif_add + '    - v0.28: Fixed the inaccuate calculation of the LombScargle, due to the method=auto default argument in astropy.timeseries.LombScargle. method is now forced to cython (Note: chi2 also works)\n'
+	return 'v0.28' , dif_add
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -431,7 +432,7 @@ def compute_ls(time, flux, Nyquist_type='mean'):
 	#
 	freq=np.linspace(0, Nyquist, np.int(np.ceil(Nyquist/resol)))
 	freq[0]=resol/100. # avoid 0 calculation at 0 by approximating it with resol/100.
-	power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz) #.autopower(nyquist_factor=1, method='cython')
+	power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz, method='cython') #.autopower(nyquist_factor=1, method='cython')
 	Nflux=len(flux)
 	#
 	tot_MS=np.sum( (flux - np.mean(flux))**2) / np.float(Nflux) # Total power in the timeserie
