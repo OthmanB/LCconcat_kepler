@@ -430,7 +430,7 @@ def compute_ls(time, flux, Nyquist_type='mean'):
 	print('Nyquist :', Nyquist)
 	print('np.ceil(Nyquist/resol) : ', np.ceil(Nyquist/resol))
 	#
-	freq=np.linspace(0, Nyquist, np.int(np.ceil(Nyquist/resol)))
+	freq=np.linspace(0, Nyquist, int(np.ceil(Nyquist/resol)))
 	freq[0]=resol/100. # avoid 0 calculation at 0 by approximating it with resol/100.
 	power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz, method='cython') #.autopower(nyquist_factor=1, method='cython')
 	Nflux=len(flux)
@@ -497,8 +497,8 @@ def do_tf_ls(dir_file, filename, doplots=True, planets=False):
 	# ---- Making proper plots ----
 	sfactor1_mu=1.
 	sfactor2_mu=0.1
-	sfactor1=np.int(sfactor1_mu/resol) # Smooth over 1 microHz
-	sfactor2=np.int(sfactor2_mu/resol) # Smooth over 10 microHz
+	sfactor1=int(sfactor1_mu/resol) # Smooth over 1 microHz
+	sfactor2=int(sfactor2_mu/resol) # Smooth over 10 microHz
 	y_smooth1=gaussian_filter(power, sfactor1, mode='mirror')
 	y_smooth2=gaussian_filter(power, sfactor2, mode='mirror')
 	
