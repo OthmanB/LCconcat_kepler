@@ -7,22 +7,25 @@ Use do_LC() and do_TF() in order to do so. Other functions are just dependencies
 '''
 
 from astropy.io import fits
-from astropy.timeseries import LombScargle
-import astropy.units.si as usi
-import astropy.units.cds as ucds
+#from astropy.timeseries import LombScargle
+#from gatspy.periodic import LombScargleFast
+#import astropy.units.si as usi
+#import astropy.units.cds as ucds
 import os, fnmatch
 import numpy as np
 import matplotlib.pyplot as plt
-#from scipy.signal import savgol_filter # for smoothing the spectrum
+from termcolor import colored
+from tf_lnp_idl import tf_lnp_idl
 
 from scipy.ndimage import gaussian_filter
 
 def version():
-	dif_add='Additions since version 0.25:\n '
-	dif_add=dif_add + '    - v0.26: Adding rem_trend_smooth() that can performs trend removal by smoothing.\n    Note that this is not linked to any lightucrve/spectrum processor.\n    Implementation requires some coding.\n'
-	dif_add=dif_add + '    - v0.27: Adding BJDREFI and BJDREFF to time vector in readfits_MAST_kepler.\n    This allows to have the correct BJD time is substract_t0=False\n'
-	dif_add=dif_add + '    - v0.28: Fixed the inaccurate calculation of the LombScargle, due to the method=auto default argument in astropy.timeseries.LombScargle. method is now forced to cython (Note: chi2 also works)\n'
-	return 'v0.28' , dif_add
+	dif_add='Additions since version 0.28:\n '
+	#dif_add=dif_add + '    - v0.26: Adding rem_trend_smooth() that can performs trend removal by smoothing.\n    Note that this is not linked to any lightucrve/spectrum processor.\n    Implementation requires some coding.\n'
+	#dif_add=dif_add + '    - v0.27: Adding BJDREFI and BJDREFF to time vector in readfits_MAST_kepler.\n    This allows to have the correct BJD time is substract_t0=False\n'
+	#dif_add=dif_add + '    - v0.28: Fixed the inaccurate calculation of the LombScargle, due to the method=auto default argument in astropy.timeseries.LombScargle. method is now forced to cython (Note: chi2 also works)\n'
+	dif_add=dif_add +  '    - v0.29: Using the IDL lnp_test() function to compute the periodogram. This is much faster and more accurate than Python function I found.\n   - Minor fixes and improvments.\n   - Better error handling\n'
+	return 'v0.29' , dif_add
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -61,13 +64,13 @@ def readfits_MAST_kepler(file_in, getraw=False, substract_t0=True):
 	lc_pdcsap=d[1].data['PDCSAP_FLUX'] # This is the CORRECTED FLUX IN KASOC LIGHTCURVES
 
 	if getraw == False:
-		lc=np.asarray(lc_pdcsap, dtype=np.float)
+		lc=np.asarray(lc_pdcsap, dtype=float)
 	else:
-		lc=np.asarray(lc_sap, dtype=np.float)
+		lc=np.asarray(lc_sap, dtype=float)
 	if substract_t0 == False:
-		time=np.asarray(t, dtype=np.float)
+		time=np.asarray(t, dtype=float)
 	else:	
-		time=np.asarray(t-min(t), dtype=np.float)
+		time=np.asarray(t-min(t), dtype=float)
 	return ID, time, lc#, cadence
 	
 def rem_trend(time, flux, pol_order, ppm=True, debug=False):
@@ -204,12 +207,12 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 		col=col+col
 	Nfiles=len(files_in_list)
 	# case of multiples file to concatenate. In that case, dir is included in the all_filenames table
-	t0=np.zeros(Nfiles, dtype=np.float)
-	tmax=np.zeros(Nfiles, dtype=np.float)
-	amp_min=np.zeros(Nfiles, dtype=np.float)
-	amp_max=np.zeros(Nfiles, dtype=np.float)
-	timegroup_min=np.zeros(1, dtype=np.float)
-	timegroup_max=np.zeros(1, dtype=np.float)
+	t0=np.zeros(Nfiles, dtype=float)
+	tmax=np.zeros(Nfiles, dtype=float)
+	amp_min=np.zeros(Nfiles, dtype=float)
+	amp_max=np.zeros(Nfiles, dtype=float)
+	timegroup_min=np.zeros(1, dtype=float)
+	timegroup_max=np.zeros(1, dtype=float)
 	print(' ------- Configuration ---------')
 	print(' Data Directory       : ', dir_in)
 	print(' Output Directory     : ', dir_out)
@@ -217,7 +220,7 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 	if remove_trend == True:
 		print('          Order of the polynom : ', pol_order)
 	print(' Variance calibration                 : ', var_calibration)
-	print(' Ignoring lare gaps (>1 day)          : ', ignore_bigGaps)
+	print(' Ignoring large gaps (>1 day)          : ', ignore_bigGaps)
 	if useraw == False:
 		print(' Using corrected/uncorrected data     :  Corrected Data')
 	else:
@@ -250,9 +253,8 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 		if doplots == True:
 			plt.plot(r1-r1[0], r2)
 		print(' [2] Saving result')
-		lightcurve=np.zeros((2,len(r1)), dtype=np.float)
-		#file_out=dir_out + kic_number + '.npz'
-		file_out=file_core +  '_LC.npz'
+		lightcurve=np.zeros((2,len(r1)), dtype=float)
+		file_out=dir_out + file_core +  '_LC.npz'
 		np.savez_compressed(file_out, lightcurve=lightcurve, id_number=kic_number, config=config, short_config=short_config, infos=infos)
 	else:
 		files=files_in_list
@@ -263,38 +265,85 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 		# Sorting files by ascending date, using the iterative removal method 
 		sorted_files=[]
 		i=0
+		# Ensure there is more than one file to process
+		while len(files) != 1:
+			try:
+				# Check if `t` is empty before calling `min(t)`
+				if t.size == 0:
+					print(colored(" >>> Warning: 't' is empty <<<", "yellow"))
+					break
+				# Find the position of the minimum time value
+				posmin = np.where(t == min(t))[0][0]
+				sorted_files.append(files[posmin])
+				# Update t0_new and tmax_new only if `i` is within bounds
+				if i < len(t0_new):
+					t0_new[i] = t[posmin]
+				if i < len(tmax_new):
+					tmax_new[i] = tmax2[posmin]
+				# Get positions where `t` is not the minimum value
+				posnotmin = np.where(t != min(t))
+				t2 = t[posnotmin]
+				tmax2 = tmax[posnotmin]
+				files = [files[j] for j in posnotmin[0]]
+				t = t2
+			except Exception as e:
+				# Ensure `i` is within bounds before accessing `files[i]`
+				if i < len(files):
+					print(colored(" >>> Warning: could not process one of the files <<<", "yellow"), files[i])
+				else:
+					print(colored(" >>> Warning: could not process one of the files <<<", "yellow"))
+				print(colored(f"   This file will be ignored... (Error: {e})", "yellow"))
+			i += 1
+		'''
+		files=files_in_list
+		t=t0
+		t0_new=t0
+		tmax_new=tmax
+		tmax2=tmax
+		# Sorting files by ascending date, using the iterative removal method 
+		sorted_files=[]
+		i=0
 		while len(files) !=1:
-			posmin=np.where(t == min(t))[0][0]
-			sorted_files.append(files[posmin])
-			t0_new[i]=t[posmin]
-			tmax_new[i]=tmax2[posmin]
-			posnotmin=np.where(t != min(t))
-			t2=t[posnotmin]
-			tmax2=tmax[posnotmin]
-			files=[files[i] for i in posnotmin[0]] 
-			t=t2
+			try:
+				posmin=np.where(t == min(t))[0][0]
+				sorted_files.append(files[posmin])
+				t0_new[i]=t[posmin]
+				tmax_new[i]=tmax2[posmin]
+				posnotmin=np.where(t != min(t))
+				t2=t[posnotmin]
+				tmax2=tmax[posnotmin]
+				files=[files[i] for i in posnotmin[0]] 
+				t=t2
+			except:
+				print(colored(" >>> Warning: could not process one of the files <<<", "yellow"), files[i])
+				print(colored("   This file will be ignored...","yellow"))
 			i=i+1
-		sorted_files.append(files[0]) # We should not forget the last file...
-		t0=t0_new
-		tmax=tmax_new
-		files=[]
-		for f in sorted_files:
-			files.append(dir_in + f)
-		files_in_list=files
+		'''
+		if len(files) !=0:
+			sorted_files.append(files[0]) # We should not forget the last file...
+			t0=t0_new
+			tmax=tmax_new
+			files=[]
+			for f in sorted_files:
+				files.append(dir_in + f)
+			files_in_list=files
+		else:
+			files_in_list=[]
 		# ---
 		#--- Remark: These lines are a remainder of the part that was handling division into several LC if gaps were large in the IDL code ---
 		# They are kept for ensuring compatibility (simplification could be done, but would require a full check of the code... again)
 		files_packet=files_in_list		
 		filegroup=files_in_list
-		timegroup_min=np.asarray(t0, dtype=np.float)
-		timegroup_max=np.asarray(tmax, dtype=np.float)
+		timegroup_min=np.asarray(t0, dtype=float)
+		timegroup_max=np.asarray(tmax, dtype=float)
 		# -------------------
 		Nfilegroup=len(filegroup)
 		delta=np.zeros(Nfilegroup)
 		print(' [2] Reading elements and concatenating...')
 		if Nfilegroup <= 0:
 			print('ERROR: Nfilegroup is less than 1. Debug required')
-			exit()
+			return []
+			#exit()
 		if Nfilegroup == 1:
 			kic, r1, r2=readfits_MAST_kepler(filegroup, getraw=useraw, substract_t0=False)
 			r1,r2=keep_finite(r1,r2)
@@ -391,7 +440,7 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 			plt.savefig(dir_out + file_core +  '_LC.png', dpi=300)
 			
 		print(' [3] Saving results...')
-		lightcurve=np.zeros((2,len(rfinal1)), dtype=np.float)
+		lightcurve=np.zeros((2,len(rfinal1)), dtype=float)
 		lightcurve[0,:]=rfinal1
 		lightcurve[1,:]=rfinal2
 		file_out=dir_out + file_core +  '_LC.npz'
@@ -407,6 +456,8 @@ def compute_ls(time, flux, Nyquist_type='mean'):
 		and at the proper resolution (no oversampling). Then it normalizes it using the Shanon theorem
 		so that units are in ppm^2/microHz. 
 	'''
+	error=False
+	microHz_to_cpd = 86400. /1e-6  # Conversion factor from microHz to cycles per day. Required because the LombScargleFast() function expects frequencies in cycles per day
 	passed=False
 	dt=time[1]-time[0]
 	if Nyquist_type == 'best':
@@ -426,27 +477,55 @@ def compute_ls(time, flux, Nyquist_type='mean'):
 	#
 	Nyquist=1e6 / dt / 86400. /2 # Nyquist.
 	resol=1e6/(max(time) - min(time))/86400.
+	if max(time) - min(time) == 0:
+		error=True
+		print(colored('Warning: Resolution is 0. This is likely due to a too small time range. Please check the data'), "yellow")
+		print(colored('         Not going to compute the PSF for this star', "yellow"))
+		return np.array([]), np.array([]), 0, error
 	print('resol: ', resol)
 	print('Nyquist :', Nyquist)
 	print('np.ceil(Nyquist/resol) : ', np.ceil(Nyquist/resol))
+	freq,power=tf_lnp_idl(time, flux) # perform all the computation and normalisation in IDL as I could not find something as efficient in Python
+	
+	# --- The following is the old code that was using astropy.timeseries.LombScargle() ---
+	# It works but is insanely slow. Impossible to use for SC (LC is OK). It is kept here for reference
 	#
-	freq=np.linspace(0, Nyquist, int(np.ceil(Nyquist/resol)))
-	freq[0]=resol/100. # avoid 0 calculation at 0 by approximating it with resol/100.
-	power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz, method='cython') #.autopower(nyquist_factor=1, method='cython')
-	Nflux=len(flux)
-	#
-	tot_MS=np.sum( (flux - np.mean(flux))**2) / np.float(Nflux) # Total power in the timeserie
-	tot_lomb=np.sum(power[0:Nflux -1]) # Total power in the lomb-scargle
-	#
-	bw=freq[2]-freq[1]
-	power=power*(tot_MS/tot_lomb)/bw # Normalised spectrum in ppm^2/microHz
+	#freq=np.linspace(0, Nyquist, int(np.ceil(Nyquist/resol)))
+	#freq[0]=resol/100. # avoid 0 calculation at 0 by approximating it with resol/100.
+	#power = LombScargle(time*86400.*usi.second, flux).power(freq*1e-6*ucds.Hz, method='cython') #.autopower(nyquist_factor=1, method='cython')
+	
+	# --- The following is the code that was using gatspy.periodic.LombScargleFast() ---
+	# It does not work better than the IDL code and is kept here for reference
+	##model = LombScargleFast().fit(time, flux) # time is expected to be in days
+	##periods, power = model.periodogram_auto()
 
-	return freq, power,resol
+	# -- This is the normalisation part ---
+	# Not required anymore as the IDL code does it
+	##freq=1e6/(periods*86400.)
+	##power = model.score_frequency_grid(resol* microHz_to_cpd/100, resol* microHz_to_cpd, int(np.ceil(Nyquist/resol))) # frequencies are expected to be in cycle/day
+	##power = model.periodogram(1 / freq)
+	#Nflux=len(flux)
+	#
+	#tot_MS=np.sum( (flux - np.mean(flux))**2) / float(Nflux) # Total power in the timeserie
+	#tot_lomb=np.sum(power[0:Nflux -1]) # Total power in the lomb-scargle
+	#
+	#bw=freq[2]-freq[1]
+	#power=power*(tot_MS/tot_lomb)/bw # Normalised spectrum in ppm^2/microHz
+	return freq, power,resol, error
+
 
 def simple_filter(time, flux, sigma=4):
 	''' 
 		Filters the lightcurve by removing signals that are above some sigma threshold
 	'''
+	# Remove NaN or Inf values
+	valid_indices = np.isfinite(time) & np.isfinite(flux)
+	time = time[valid_indices]
+	flux = flux[valid_indices]
+	# Check if the resulting arrays are empty
+	if len(time) == 0 or len(flux) == 0:
+		print(colored("Warning: Empty arrays after removing NaN or Inf values.", "yellow"))
+		return np.array([]), np.array([])
 	mean=np.mean(flux)
 	stddev=sigma*np.std(flux)
 	pos_ok=np.where(np.abs(flux) <= mean + sigma*stddev)
@@ -489,9 +568,15 @@ def do_tf_ls(dir_file, filename, doplots=True, planets=False):
 		print('The proper function to filter planetary / Binary signal to reveal pulsations')
 		print('Is not written yet. Please use planets == False for the moment')
 	else:
-		time, flux=simple_filter(time, flux, sigma=3.5)
-		freq, power,resol=compute_ls(time, flux, Nyquist_type=Nyquist_type) 
-
+		sigma=3.5
+		time, flux=simple_filter(time, flux, sigma=sigma)
+		if len(time) != 0:
+			freq, power,resol, error=compute_ls(time, flux, Nyquist_type=Nyquist_type) 
+			if error == True:
+				return np.array([]), np.array([])
+		else:
+			return np.array([]), np.array([])
+		
 	file_out=dir_file + id_number + '_' + numeral_config + '_TF'
 	
 	# ---- Making proper plots ----
@@ -503,13 +588,13 @@ def do_tf_ls(dir_file, filename, doplots=True, planets=False):
 	y_smooth2=gaussian_filter(power, sfactor2, mode='mirror')
 	
 	plt.figure()
-	plt.xlabel('Frequency ($\mu$' + 'Hz)', fontsize=10)
-	plt.ylabel('Power ($ppm^2/ \mu$'+'Hz)', fontsize=10)
+	plt.xlabel('Frequency ($\\mu$' + 'Hz)', fontsize=10)
+	plt.ylabel('Power ($ppm^2/ \\mu$'+'Hz)', fontsize=10)
 	plt.xscale('log')
 	plt.yscale('log')
 	plt.plot(freq, power, color='black', label='spectrum')
-	plt.plot(freq, y_smooth1, color='blue', label='sfactor1='+ str(sfactor1_mu) + '($\mu$Hz)')
-	plt.plot(freq, y_smooth2, color='red', label='sfactor2='+ str(sfactor2_mu) + '($\mu$Hz)')
+	plt.plot(freq, y_smooth1, color='blue', label='sfactor1='+ str(sfactor1_mu) + '($\\mu$Hz)')
+	plt.plot(freq, y_smooth2, color='red', label='sfactor2='+ str(sfactor2_mu) + '($\\mu$Hz)')
 	plt.legend(loc='lower left')
 	plt.savefig(file_out + '.png', dpi=300) # Save the previous figure
 	
@@ -532,7 +617,7 @@ def do_LC(dir_in, dir_out, ID='*'):
 		WARNING on ID: If ID='*' make sure that the dir_in does contain only quarters for a single star. Otherwise, it will end up mixing stars!
 	'''
 	files_in_list=get_files_list(dir_in, extension='.fits', prefix='kplr', ID=ID)
-	lc_0100=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_order=6, var_calibration=False, ignore_bigGaps=False, useraw=False, doplots=True)
+	lc_0100=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_order=6, var_calibration=False, ignore_bigGaps=True, useraw=False, doplots=True)
 	lc_0000=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=False, pol_order=2, var_calibration=False, ignore_bigGaps=False, useraw=False, doplots=True)
 	#lc_0010=concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=False, pol_order=2, var_calibration=False, ignore_bigGaps=False, useraw=True, doplots=True)
 	print('    Two lightcurve created with short configuration 0000 and 0100')
@@ -561,10 +646,10 @@ def do_test_LC():
 	dir_out=dir_in + 'out/'
 	do_LC(dir_in, dir_out)
 
-def do_test_tf_ls():
+def do_test_tf_ls(dir_file, filename):
 	current_dir=os.getcwd()
 	dir_in=current_dir + '/test/out/'
-	files_in_list=get_files_list(dir_in, extension='_LC.npz', prefix='', ID='*')
+	files_in_list=get_files_list(dir_in, extension='_LC.npz', prefix='', ID='0015*')
 	do_tf_ls(dir_file, filename, doplots=True, planets=False)
 
 	print('dir_in =', dir_in)

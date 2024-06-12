@@ -48,7 +48,7 @@ def make_LC(dir_base, cadence, dir_base_out, kic_list='', kic_file='', kic_file_
 		do_LC(paths[i] +'/', dir_base_out)
 	return found_kic
 
-def make_ALL(dir_base, cadence, dir_base_out, kic_list='', kic_file='', kic_file_col=0):
+def make_ALL(dir_base_out, dir_base='../lightcurves/', cadence='sc', kic_list='', kic_file='', kic_file_col=0):
 	''' 
 		Using a provided list of kic number (kic_list), the code (1) search for the location 
 		of the quarters within dir_base and then (2) concatenate the quarters to make the 
