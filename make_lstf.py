@@ -7,6 +7,7 @@ extract their lightcurve and or spectrum and organize them in structured manner 
 '''
 from scan_mastdir import scandir_mast_kepler_bylist, scandir_mast_kepler_byfile
 from prepare_lc_kepler import do_LC, do_TF
+from termcolor import colored
 
 def version():
 	return 'v0.1'
@@ -45,7 +46,11 @@ def make_LC(dir_base, cadence, dir_base_out, kic_list='', kic_file='', kic_file_
 	l=len(paths)
 	for i in range(l):
 		print(' [' + str(i+1) + '/' + str(l) + '] Processing KIC ', found_kic[i], '...') 
-		do_LC(paths[i] +'/', dir_base_out)
+		try:
+			do_LC(paths[i] +'/', dir_base_out)
+		except Exception as e:
+			print(colored('Error: Could not process KIC ', found_kic[i]),"yellow")
+			#exit()
 	return found_kic
 
 def make_ALL(dir_base_out, dir_base='../lightcurves/', cadence='sc', kic_list='', kic_file='', kic_file_col=0):

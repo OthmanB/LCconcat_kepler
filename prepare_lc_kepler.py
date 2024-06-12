@@ -8,14 +8,15 @@ Use do_LC() and do_TF() in order to do so. Other functions are just dependencies
 
 from astropy.io import fits
 #from astropy.timeseries import LombScargle
-#from gatspy.periodic import LombScargleFast
-#import astropy.units.si as usi
-#import astropy.units.cds as ucds
+from gatspy.periodic import LombScargleFast
+import astropy.units.si as usi
+import astropy.units.cds as ucds
 import os, fnmatch
 import numpy as np
 import matplotlib.pyplot as plt
 from termcolor import colored
 from tf_lnp_idl import tf_lnp_idl
+#from scipy.signal import savgol_filter # for smoothing the spectrum
 
 from scipy.ndimage import gaussian_filter
 
@@ -25,7 +26,8 @@ def version():
 	#dif_add=dif_add + '    - v0.27: Adding BJDREFI and BJDREFF to time vector in readfits_MAST_kepler.\n    This allows to have the correct BJD time is substract_t0=False\n'
 	#dif_add=dif_add + '    - v0.28: Fixed the inaccurate calculation of the LombScargle, due to the method=auto default argument in astropy.timeseries.LombScargle. method is now forced to cython (Note: chi2 also works)\n'
 	dif_add=dif_add +  '    - v0.29: Using the IDL lnp_test() function to compute the periodogram. This is much faster and more accurate than Python function I found.\n   - Minor fixes and improvments.\n   - Better error handling\n'
-	return 'v0.29' , dif_add
+	dif_add=dif_add +  '    - v0.291: More error handling for edge cases\n'
+	return 'v0.291' , dif_add
 
 def format_ID(ID, Ndigits=9):
 	'''
@@ -57,21 +59,26 @@ def readfits_MAST_kepler(file_in, getraw=False, substract_t0=True):
 	#cadence=d[1].header['CADENCENO']
 	#print('Cadence: ', cadence)
 	bjdref=bjdrefi+bjdreff
-	t=d[1].data['TIME']   # This is nearly identical to the KASOC TIME. But there is a slight difference of the order of the time error (don't understand why)
-	t=t+ bjdref -240e4  # Adding bjdref brings us back to exactly the same time as KASOC TIME
-	#tcorr=d[1].data['TIMECORR']  # TIME CORRECTION
-	lc_sap=d[1].data['SAP_FLUX'] # This is the RAW FLUX IN KASOC LIGHTCURVES
-	lc_pdcsap=d[1].data['PDCSAP_FLUX'] # This is the CORRECTED FLUX IN KASOC LIGHTCURVES
+	try:
+		t=d[1].data['TIME']   # This is nearly identical to the KASOC TIME. But there is a slight difference of the order of the time error (don't understand why)
+		t=t+ bjdref -240e4  # Adding bjdref brings us back to exactly the same time as KASOC TIME
+		#tcorr=d[1].data['TIMECORR']  # TIME CORRECTION
+		lc_sap=d[1].data['SAP_FLUX'] # This is the RAW FLUX IN KASOC LIGHTCURVES
+		lc_pdcsap=d[1].data['PDCSAP_FLUX'] # This is the CORRECTED FLUX IN KASOC LIGHTCURVES
 
-	if getraw == False:
-		lc=np.asarray(lc_pdcsap, dtype=float)
-	else:
-		lc=np.asarray(lc_sap, dtype=float)
-	if substract_t0 == False:
-		time=np.asarray(t, dtype=float)
-	else:	
-		time=np.asarray(t-min(t), dtype=float)
-	return ID, time, lc#, cadence
+		if getraw == False:
+			lc=np.asarray(lc_pdcsap, dtype=float)
+		else:
+			lc=np.asarray(lc_sap, dtype=float)
+		if substract_t0 == False:
+			time=np.asarray(t, dtype=float)
+		else:	
+			time=np.asarray(t-min(t), dtype=float)
+		return ID, time, lc#, cadence
+	except Exception as e:
+		print(colored('Error: Could not read the file', 'red'))
+		print(colored('Error: ', 'red'),e)
+		return [], [], []
 	
 def rem_trend(time, flux, pol_order, ppm=True, debug=False):
 	'''
@@ -238,12 +245,22 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 	plt.xlabel('time (days)', fontsize=10)
 	plt.ylabel('Intensity', fontsize=10)
 	for i in range(Nfiles):
-		kic_number, t, lc=readfits_MAST_kepler(dir_in + files_in_list[i], getraw=useraw, substract_t0=False)
-		t,lc=keep_finite(t,lc)
-		t0[i]=np.min(t) # identifying the ordering of the files by extracting start / end time
-		tmax[i]=np.max(t) # identifying the ordering of the files by extracting start / end time
-		amp_min[i]=np.nanmin(lc) # identifying the minimum amplitude... usefull for plots only
-		amp_max[i]=np.nanmax(lc) # identifying the maximum amplitude... usefull for plots only
+		kic_number, t, lc, =readfits_MAST_kepler(dir_in + files_in_list[i], getraw=useraw, substract_t0=False)
+		try:
+			t,lc=keep_finite(t,lc)
+			t0[i]=np.min(t) # identifying the ordering of the files by extracting start / end time
+			tmax[i]=np.max(t) # identifying the ordering of the files by extracting start / end time
+			amp_min[i]=np.nanmin(lc) # identifying the minimum amplitude... usefull for plots only
+			amp_max[i]=np.nanmax(lc) # identifying the maximum amplitude... usefull for plots only
+		except IOError as e:
+			print(colored(f"Error reading file: {e}", "yellow"))
+			return []
+		except ValueError as e:
+			print(colored(f"ValueError: {e}", "yellow"))
+			return []
+		except Exception as e:
+			print(colored(f"Unexpected error: {e}", "yellow"))
+			return []
 	file_core=kic_number + '_' + str(int(useraw == True)) + str(int(remove_trend == True)) + str(int(var_calibration == True)) + str(int(ignore_bigGaps == True))
 	if Nfiles == 1:
 		ts=t # may not be required
@@ -294,31 +311,6 @@ def concatenate_kepler(dir_in, files_in_list, dir_out, remove_trend=True, pol_or
 					print(colored(" >>> Warning: could not process one of the files <<<", "yellow"))
 				print(colored(f"   This file will be ignored... (Error: {e})", "yellow"))
 			i += 1
-		'''
-		files=files_in_list
-		t=t0
-		t0_new=t0
-		tmax_new=tmax
-		tmax2=tmax
-		# Sorting files by ascending date, using the iterative removal method 
-		sorted_files=[]
-		i=0
-		while len(files) !=1:
-			try:
-				posmin=np.where(t == min(t))[0][0]
-				sorted_files.append(files[posmin])
-				t0_new[i]=t[posmin]
-				tmax_new[i]=tmax2[posmin]
-				posnotmin=np.where(t != min(t))
-				t2=t[posnotmin]
-				tmax2=tmax[posnotmin]
-				files=[files[i] for i in posnotmin[0]] 
-				t=t2
-			except:
-				print(colored(" >>> Warning: could not process one of the files <<<", "yellow"), files[i])
-				print(colored("   This file will be ignored...","yellow"))
-			i=i+1
-		'''
 		if len(files) !=0:
 			sorted_files.append(files[0]) # We should not forget the last file...
 			t0=t0_new
